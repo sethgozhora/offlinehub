@@ -1,0 +1,200 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OfflineHub</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: #10131c;
+  color: white;
+  font-family: Arial, sans-serif;
+}
+header {
+  padding: 22px;
+  background: #191e2c;
+  font-size: 25px;
+  font-weight: bold;
+}
+header span { color: #54a6ff; }
+main {
+  max-width: 850px;
+  margin: 45px auto;
+  padding: 20px;
+}
+h1 { font-size: 34px; }
+p { color: #aab3c5; }
+.panel {
+  background: #1b2232;
+  padding: 24px;
+  border-radius: 15px;
+  margin-top: 25px;
+}
+input {
+  width: 100%;
+  padding: 15px;
+  border: 1px solid #39445b;
+  border-radius: 9px;
+  background: #101725;
+  color: white;
+  margin: 9px 0;
+}
+button {
+  padding: 14px 20px;
+  border: 0;
+  border-radius: 9px;
+  background: #2789f5;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+}
+button:hover { background: #1269c9; }
+#status { margin-top: 18px; }
+#history { margin-top: 15px; }
+.item {
+  padding: 12px;
+  border-bottom: 1px solid #39445b;
+  overflow-wrap: anywhere;
+}
+progress { width: 100%; }
+footer {
+  text-align: center;
+  color: #77849c;
+  padding: 30px;
+}
+</style>
+</head>
+<body>
+
+<header>⬇ Offline<span>Hub</span></header>
+
+<main>
+<h1>Your downloads. Your library.</h1>
+<p>Download permitted videos, apps and files for offline use.</p>
+
+<div class="panel">
+  <h2>Start a download</h2>
+  <input id="url" type="url"
+    placeholder="Paste a direct download URL here">
+
+  <button onclick="downloadFile()">Download</button>
+
+  <div id="status"></div>
+  <progress id="progress" value="0" max="100" hidden></progress>
+</div>
+
+<div class="panel">
+  <h2>Download history</h2>
+  <div id="history">No downloads yet.</div>
+</div>
+</main>
+
+<footer>OfflineHub © 2026</footer>
+
+<script>
+const historyList = document.getElementById("history");
+
+function showHistory() {
+  const items = JSON.parse(
+    localStorage.getItem("offlinehub_history") || "[]"
+  );
+
+  historyList.innerHTML = items.length
+    ? items.map(item =>
+        `<div class="item">${item}</div>`
+      ).join("")
+    : "No downloads yet.";
+}
+
+async function downloadFile() {
+  const url = document.getElementById("url").value.trim();
+  const status = document.getElementById("status");
+  const progress = document.getElementById("progress");
+
+  if (!url) {
+    status.textContent = "Enter a download URL first.";
+    return;
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    status.textContent = "That URL is invalid.";
+    return;
+  }
+
+  if (parsed.protocol !== "https:") {
+    status.textContent = "Please use a secure HTTPS link.";
+    return;
+  }
+
+  status.textContent = "Connecting...";
+  progress.hidden = false;
+  progress.value = 0;
+
+  try {
+    const response = await fetch(url);
+
+    if (!response.ok) throw new Error("Download unavailable.");
+
+    const total = Number(response.headers.get("content-length"));
+    const reader = response.body.getReader();
+    const chunks = [];
+    let received = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      chunks.push(value);
+      received += value.length;
+
+      if (total) {
+        progress.value = received / total * 100;
+        status.textContent =
+          "Downloading: " + Math.round(progress.value) + "%";
+      } else {
+        status.textContent = "Downloading...";
+      }
+    }
+
+    const blob = new Blob(chunks);
+    const filename = decodeURIComponent(
+      parsed.pathname.split("/").pop() || "download"
+    ).replace(/[\\/:*?"<>|]/g, "_");
+
+    const objectURL = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectURL;
+    link.download = filename;
+    link.click();
+
+    setTimeout(() => URL.revokeObjectURL(objectURL), 60000);
+
+    const items = JSON.parse(
+      localStorage.getItem("offlinehub_history") || "[]"
+    );
+
+    items.unshift(filename);
+    localStorage.setItem(
+      "offlinehub_history",
+      JSON.stringify(items.slice(0, 30))
+    );
+
+    status.textContent = "Download completed!";
+    showHistory();
+
+  } catch (error) {
+    status.textContent =
+      "Download failed. The server may block browser downloads (CORS), or the link may not be a direct downloadable file.";
+  }
+}
+
+showHistory();
+</script>
+</body>
+</html>
